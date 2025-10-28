@@ -1,0 +1,39 @@
+# .github/workflows/deploy-ftps.yml
+# Why FTPS: works on most cPanel hosts without SSH; incremental + keeps server-only files (clean-slate=false).
+
+name: Deploy to cPanel (FTPS)
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate presence of index.html
+        run: |
+          test -f index.html || (echo "index.html not found at repo root" && exit 1)
+
+      - name: Deploy via FTPS
+        uses: SamKirkland/FTP-Deploy-Action@v4
+        with:
+          server: ${{ secrets.CPANEL_FTP_SERVER }}
+          username: ${{ secrets.CPANEL_FTP_USERNAME }}
+          password: ${{ secrets.CPANEL_FTP_PASSWORD }}
+          protocol: ftps                 # change to 'ftps-implicit' + port 990 only if your host requires implicit TLS
+          port: 21
+          local-dir: ./
+          server-dir: public_html/       # set to subfolder if needed
+          exclude: |
+            **/.git*
+            **/.github/**
+            **/_reports/**
+            **/_reports_fix/**
+            **/README_DEPLOY_SSH.md
+          log-level: standard
+          state-name: .ftp-deploy-sync-state.json
+          dangerous-clean-slate: false   # true = mirror deploy (deletes extras on server); keep false unless you want that
