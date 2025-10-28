@@ -1,32 +1,39 @@
-# SSH/Rsync Deployment (cPanel)
+# .github/workflows/deploy-ftps.yml
+# Why FTPS: works on most cPanel hosts without SSH; incremental + keeps server-only files (clean-slate=false).
 
-## 1) Generate SSH key (local)
-```bash
-ssh-keygen -t ed25519 -C "deploy@pneflags" -f ~/.ssh/pneflags_deploy -N ""
-```
+name: Deploy to cPanel (FTPS)
 
-## 2) Install public key on server
-- Log in to cPanel → **SSH Access** → **Manage SSH Keys** → **Import Key**.
-- Paste the contents of `~/.ssh/pneflags_deploy.pub`.
-- Authorize the key.
-- Ensure the key is in the user's `~/.ssh/authorized_keys` on the server.
+on:
+  push:
+    branches: [ "main" ]
 
-## 3) Find your SSH host and target directory
-- Host: your cPanel SSH hostname (e.g., `ssh.yourdomain.com` or main domain)
-- User: your cPanel username
-- Target dir: absolute path to your document root, e.g. `/home/<user>/public_html/`
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-## 4) Add GitHub Secrets (Repo → Settings → Secrets and variables → Actions)
-- `DEPLOY_SSH_PRIVATE_KEY` → paste contents of `~/.ssh/pneflags_deploy`
-- `DEPLOY_SSH_HOST` → e.g. `ssh.yourdomain.com`
-- `DEPLOY_SSH_USER` → your cPanel username
-- `DEPLOY_TARGET_DIR` → e.g. `/home/<user>/public_html/`
-- `DEPLOY_KNOWN_HOSTS` → output of: `ssh-keyscan -t rsa,ecdsa,ed25519 ssh.yourdomain.com`
+      - name: Validate presence of index.html
+        run: |
+          test -f index.html || (echo "index.html not found at repo root" && exit 1)
 
-## 5) Push to main
-- Push any commit to `main`. GitHub Actions will rsync the repo content to your server.
-- Exclusions: `.git/`, `.github/`, `_reports/`, `_reports_fix/`
-
-## Notes
-- Ensure `public_html` exists and is writable by your user.
-- The workflow uses `--delete` to remove files on the server that were deleted in the repo.
+      - name: Deploy via FTPS
+        uses: SamKirkland/FTP-Deploy-Action@v4
+        with:
+          server: ${{ secrets.CPANEL_FTP_SERVER }}
+          username: ${{ secrets.CPANEL_FTP_USERNAME }}
+          password: ${{ secrets.CPANEL_FTP_PASSWORD }}
+          protocol: ftps                 # change to 'ftps-implicit' + port 990 only if your host requires implicit TLS
+          port: 21
+          local-dir: ./
+          server-dir: public_html/       # set to subfolder if needed
+          exclude: |
+            **/.git*
+            **/.github/**
+            **/_reports/**
+            **/_reports_fix/**
+            **/README_DEPLOY_SSH.md
+          log-level: standard
+          state-name: .ftp-deploy-sync-state.json
+          dangerous-clean-slate: false   # true = mirror deploy (deletes extras on server); keep false unless you want that
